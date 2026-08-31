@@ -13,6 +13,24 @@ Volcengine ECS.
 > policy, audit, and container controls, but it is not hardened multi-tenant
 > isolation. Do not use production data or credentials. See [SECURITY.md](SECURITY.md).
 
+## Contents
+
+- [Screenshots](#screenshots)
+- [Features](#features)
+- [How it works](#how-it-works)
+- [The ingress gate](#the-ingress-gate) — what may enter the Runtime
+- [The egress gateway](#the-egress-gateway) — where the Runtime may reach
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Demo script](#demo-script)
+- [Development](#development)
+- [Docker Compose](#docker-compose)
+- [Deployment](#deployment)
+- [Configuration](#configuration)
+- [Validation](#validation)
+- [Threat model and limitations](#threat-model-and-limitations)
+- [Documentation](#documentation)
+
 ## Screenshots
 
 ### Agent Playground
@@ -39,220 +57,6 @@ Volcengine ECS.
 - Ark-only egress gateway with signed, short-lived Run tokens
 - Docker and Terraform deployment paths for Volcengine ECS
 
-## Requirements
-
-- Node.js 22+
-- npm 10+
-- Docker, Colima, or Podman
-- A Volcengine Ark API key and endpoint that supports the Responses API
-
-Codex CLI is included in the Runtime image and is not required on the host.
-
-## Local browser SOP
-
-### 1. Check the local tools
-
-Install Node.js 22+ and one supported container engine, then verify them:
-
-```bash
-node --version
-npm --version
-docker --version        # Docker Desktop, Docker Engine, or Colima
-podman --version        # Use this instead when running Podman
-```
-
-Only one container engine is required. Codex CLI is already included in the
-Runtime image.
-
-### 2. Clone the repository
-
-```bash
-git clone <repository-url> volc-agent-launchpad
-cd volc-agent-launchpad
-```
-
-Skip this step when already working from the repository root.
-
-### 3. Start the POC
-
-```bash
-ARK_API_KEY=your-ark-api-key \
-ARK_MODEL=ep-your-endpoint-id \
-npm run poc
-```
-
-The first run installs Node.js dependencies and builds the Runtime image. The
-script automatically selects Docker, Colima, or Podman. It also builds a local
-Ark gateway and places Agent Runtime containers on an internal network with no
-direct internet route. The gateway alone receives the real Ark API key.
-
-Ark is Volcengine's remote model-serving platform: Agent files and tools remain
-local, while Codex sends model inference requests over HTTPS to the Ark API.
-The local gateway is the controlled path between those two parts.
-
-### 4. Open the browser
-
-Visit <http://localhost:3000>, or open it from the terminal:
-
-```bash
-open http://localhost:3000       # macOS
-xdg-open http://localhost:3000   # Linux desktop
-```
-
-In the Web UI:
-
-1. Select **Create Agent**.
-2. Enter a name, description, and workspace instructions.
-3. Select **Create Agent** again.
-4. Enter a task in the Playground, for example:
-
-   ```text
-   Create a TypeScript hello-world CLI, add a test, and run it.
-   ```
-
-The Agent can write files, run commands, and continue the same Codex session in
-later messages.
-
-Ark-only mode intentionally blocks npm, GitHub, and other external services.
-For a task that genuinely needs unrestricted internet access, start the POC
-explicitly in connected mode:
-
-```bash
-RUNTIME_NETWORK_MODE=current-bridge \
-ARK_API_KEY=your-ark-api-key \
-ARK_MODEL=ep-your-endpoint-id \
-npm run poc
-```
-
-Connected mode passes the Ark key to the Runtime and is not a confidentiality
-boundary; the selected mode is recorded in Run evidence.
-
-### 5. Stop and resume
-
-Press `Ctrl+C` in the startup terminal. The script removes temporary Runtime
-containers but keeps Agent workspaces and conversations.
-
-- macOS state: `~/.volc-agent-launchpad/`
-- Linux state: `.local/`
-- Custom location: set `LOCAL_POC_DATA_ROOT`
-
-Run the same `npm run poc` command to continue later.
-
-### Select a specific container engine
-
-Force Podman when multiple engines are installed:
-
-```bash
-CONTAINER_ENGINE=podman \
-ARK_API_KEY=your-ark-api-key \
-ARK_MODEL=ep-your-endpoint-id \
-npm run poc
-```
-
-Colima uses `CONTAINER_ENGINE=docker` because it exposes the Docker CLI.
-
-For a clean Linux host, follow the
-[rootless Podman setup](docs/LOCAL_POC.md#rootless-podman-on-linux).
-
-## Docker Compose
-
-The legacy single-container Compose profile can serve the control plane and UI,
-but it cannot execute Airlock Runs unless that environment provides a
-separate supported container engine. Airlock never mounts the Docker socket
-and never falls back to in-process Codex. Use `npm run poc` for the complete
-local acceptance path.
-
-Create and edit the configuration:
-
-```bash
-./scripts/bootstrap-local.sh
-```
-
-Required values in `.env`:
-
-```dotenv
-ARK_API_KEY=your-ark-api-key
-ARK_MODEL=ep-your-endpoint-id
-APP_AUTH_TOKEN=replace-with-at-least-24-random-characters
-```
-
-Start the application:
-
-```bash
-docker compose up --build
-```
-
-Open <http://localhost:3000>. Stop it without deleting Agent data:
-
-```bash
-docker compose down
-```
-
-## Development
-
-```bash
-npm install
-cp .env.example .env
-npm install --global @openai/codex@0.111.0
-npm run dev
-```
-
-- Web UI: <http://localhost:5173>
-- API: <http://localhost:3000>
-
-Use local paths in `.env` when running outside Docker:
-
-```dotenv
-APP_DATA_DIR=.data
-AGENT_WORKSPACE_ROOT=workspaces
-CODEX_HOME=codex-home
-```
-
-## Deployment
-
-- [Existing Linux ECS with Docker](docs/DEPLOYMENT.md#existing-linux-ecs)
-- [Complete Volcengine environment with Terraform](docs/DEPLOYMENT.md#terraform-deployment)
-- [Local Docker, Colima, and Podman details](docs/LOCAL_POC.md)
-
-The host deployment script deploys from the current source tree:
-
-```bash
-cp .env.example .env.production
-sudo ./scripts/deploy-host.sh .env.production
-```
-
-The Terraform path provisions VPC, subnet, security group, ECS, and EIP:
-
-```bash
-cp deploy/volcengine/terraform.tfvars.example \
-  deploy/volcengine/terraform.tfvars
-./scripts/deploy-volcengine.sh
-```
-
-## Configuration
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `ARK_API_KEY` | Required | Ark model API key. |
-| `ARK_MODEL` | Required | Responses-capable endpoint or model ID. |
-| `ARK_BASE_URL` | Beijing v3 endpoint | Ark OpenAI-compatible API URL. |
-| `APP_AUTH_TOKEN` | Empty on loopback | Shared demo token; use 24+ random characters remotely. |
-| `RUNTIME_PROVIDER` | `container` | Guarded Runs require disposable Runtime containers and fail closed otherwise. |
-| `RUNTIME_NETWORK_MODE` | `current-bridge` in raw config; `ark-gateway` in supported startup scripts | Select Ark-only internal networking or explicit unrestricted egress. |
-| `ARK_GATEWAY_URL` | `http://ark-gateway:8080/api/v3` | Internal Responses API endpoint used by Codex. |
-| `ARK_GATEWAY_SECRET` | Generated by supported startup scripts | Signs short-lived Run tokens; 32+ characters when starting components manually. |
-| `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox mode. |
-| `CODEX_TIMEOUT_MS` | `600000` | Maximum duration of one turn. |
-| `INGRESS_ENFORCEMENT` | `enforce` | Read-side gate: `enforce` withholds, `audit` records, `off` disables. |
-| `INGRESS_CLEARANCE` | `internal` | Highest sensitivity a Run may read. |
-| `INGRESS_MAX_BYTES_PER_FILE` | `262144` | Inspection budget per file; rules usually settle sooner. |
-| `INGRESS_PROMPT_SECRETS` | `redact` | Credentials pasted into a prompt: `redact` or `deny`. |
-| `INGRESS_ADJUDICATOR` | `off` | Model-backed classification of unmarked documents: `off` or `ark`. |
-| `INGRESS_ADJUDICATOR_MAX_FILES` | `5` | Model calls per Run. |
-| `LOCAL_POC_DATA_ROOT` | Platform-specific | Local metadata, workspace, and session directory. |
-
-See [.env.example](.env.example) for all Runtime and resource-limit options.
-
 ## How it works
 
 ```mermaid
@@ -272,11 +76,17 @@ flowchart LR
 
 Only staging and the selected Agent's private Codex home are writable Runtime
 mounts. Approved turns commit both files and the proposed Codex thread;
-rejection resets session state. Airlock uses Architecture B: Codex acts
-autonomously, so enforcement occurs at mounts, Runtime lifetime, deterministic
-file policy, and promotion—not through a claimed per-tool interceptor. The
-ingress gate applies the same principle to reads: what the Runtime may read is
-decided by what gets staged, before the mount exists.
+rejection resets session state.
+
+Airlock uses Architecture B: Codex acts autonomously, so enforcement occurs at
+mounts, Runtime lifetime, deterministic file policy, and promotion — not through
+a claimed per-tool interceptor. The ingress gate applies the same principle to
+reads: what the Runtime may read is decided by what gets staged, before the
+mount exists.
+
+Ark is Volcengine's remote model-serving platform. Agent files and tools stay
+local; Codex sends model inference requests over HTTPS to the Ark API. The local
+gateway is the controlled path between those two parts.
 
 ## The ingress gate
 
@@ -341,20 +151,28 @@ An agent is dangerous when it holds all three of these at once:
 | --- | --- |
 | Private data | A staged file at or above `internal` is readable at the Run's clearance. |
 | Untrusted content | Staged content of outside provenance (`vendor/`, `third_party/`, `.eml`, `.html`) or carrying injection-shaped text (`IN050`, `IN052`), or a URL in the prompt (`IN051`). |
-| External comms | The Run policy's `networkMode` is anything other than `none`. |
+| External comms | The Run's `networkMode` is neither `none` nor `ark-gateway` — that is, the Runtime can reach destinations other than Ark. |
 
 Any two are survivable. All three means the untrusted text can tell the agent to
 read the private data and send it out, and no amount of prompt hardening
 reliably stops that. So the gate does not try to detect the attack — it removes
-a leg.
+a leg. Which leg depends on how the Run reaches the network:
 
-Which leg? Not comms: Codex must reach Ark over the bridge to run at all, and
-there is no Ark-only egress gateway yet. Not the untrusted content: the Run
-needs it. So `IN061` drops **private data** — the Run's effective clearance
-falls to `public` and the ingress gate withholds everything above it. The Run
-still executes; it simply cannot read secrets while it also holds untrusted
-content and network reach. When an egress gateway exists, dropping comms becomes
-the cheaper mitigation, and `trifecta-policy.ts` is where that choice lives.
+- **`ark-gateway`, the default in the supported startup scripts.** The comms leg
+  is already gone. The Runtime sits on an internal network whose only reachable
+  peer is the Responses-only gateway, so the set cannot complete and the Run
+  keeps its clearance. This is the cheaper mitigation, and it is why the gate
+  prefers this mode.
+- **`current-bridge`, an explicit opt-in for npm and GitHub tasks.** Comms is
+  open and the Run needs its untrusted content, so the gate drops the remaining
+  leg: `IN061` lowers the Run's effective clearance to `public` and withholds
+  everything above it. The Run still executes; it simply cannot read secrets
+  while it also holds untrusted content and open network reach.
+
+Under `INGRESS_ENFORCEMENT=audit` nothing is dropped — a complete trifecta is
+recorded as `IN062` and the Run proceeds unmitigated.
+[`trifecta-policy.ts`](apps/server/src/trifecta-policy.ts) is where this choice
+lives.
 
 ### Deterministic rules, then a model for what they cannot settle
 
@@ -406,51 +224,293 @@ Marking detection is a heuristic tuned to avoid quarantining source code that
 merely mentions the word. Set `INGRESS_CLEARANCE=public` when a workspace
 should surface everything for review rather than only what the rules match.
 
-In `ark-gateway` mode the Runtime has no public route. A startup negative check
-must fail to reach `example.com`, while a health request to the local gateway
-must succeed. The gateway accepts only `/api/v3/responses...`, validates the
-Run token, replaces it with the real Ark key, and streams the Ark response.
+## The egress gateway
 
-## Airlock demo
+The ingress gate decides what reaches the Runtime. The egress gateway decides
+where the Runtime can reach.
 
-1. On WSL2/Linux with Docker or rootless Podman, run
-   `ARK_API_KEY=... ARK_MODEL=... npm run poc`.
-2. Ask an Agent to create a small program and test. Confirm the evidence panel
+In `ark-gateway` mode the Runtime has no public route. It sits on an internal
+container network whose only reachable peer is a local gateway that:
+
+- accepts only `/api/v3/responses...`;
+- validates the short-lived signed Run token the Runtime was issued;
+- replaces that token with the real Ark API key, which never enters the Runtime;
+- streams the Ark response back.
+
+Startup runs a two-sided preflight: a negative check must **fail** to reach
+`example.com` from a Runtime peer, and a health request to the local gateway
+must **succeed**. That preflight is what lets the trifecta check treat
+`ark-gateway` as a closed comms leg rather than an assumption.
+
+`current-bridge` is the explicit compatibility mode for tasks that genuinely
+need npm, GitHub, or other external services. It passes the Ark key into the
+Runtime and is **not** a confidentiality boundary. Whichever mode a Run used is
+recorded in its evidence.
+
+## Requirements
+
+- Node.js 22+
+- npm 10+
+- Docker, Colima, or Podman
+- A Volcengine Ark API key and endpoint that supports the Responses API
+
+Codex CLI is included in the Runtime image and is not required on the host.
+
+## Quick start
+
+### 1. Check the local tools
+
+Install Node.js 22+ and one supported container engine, then verify them:
+
+```bash
+node --version
+npm --version
+docker --version        # Docker Desktop, Docker Engine, or Colima
+podman --version        # Use this instead when running Podman
+```
+
+Only one container engine is required.
+
+### 2. Get the repository
+
+```bash
+git clone https://github.com/darrenori/TechJam.git
+cd TechJam
+```
+
+Skip this step when already working from the repository root.
+
+### 3. Start the POC
+
+```bash
+ARK_API_KEY=your-ark-api-key \
+ARK_MODEL=ep-your-endpoint-id \
+npm run poc
+```
+
+The first run installs Node.js dependencies and builds the Runtime image. The
+script automatically selects Docker, Colima, or Podman. It also builds the local
+Ark gateway and places Agent Runtime containers on an internal network with no
+direct internet route — the gateway alone receives the real Ark API key.
+
+### 4. Open the browser
+
+Visit <http://localhost:3000>, or open it from the terminal:
+
+```bash
+open http://localhost:3000       # macOS
+xdg-open http://localhost:3000   # Linux desktop
+```
+
+In the Web UI:
+
+1. Select **Create Agent**.
+2. Enter a name, description, and workspace instructions.
+3. Select **Create Agent** again.
+4. Enter a task in the Playground, for example:
+
+   ```text
+   Create a TypeScript hello-world CLI, add a test, and run it.
+   ```
+
+The Agent can write files, run commands, and continue the same Codex session in
+later messages.
+
+Ark-only mode intentionally blocks npm, GitHub, and other external services. For
+a task that genuinely needs unrestricted internet access, start the POC
+explicitly in connected mode:
+
+```bash
+RUNTIME_NETWORK_MODE=current-bridge \
+ARK_API_KEY=your-ark-api-key \
+ARK_MODEL=ep-your-endpoint-id \
+npm run poc
+```
+
+### 5. Stop and resume
+
+Press `Ctrl+C` in the startup terminal. The script removes temporary Runtime
+containers but keeps Agent workspaces and conversations.
+
+- macOS state: `~/.volc-agent-launchpad/`
+- Linux state: `.local/`
+- Custom location: set `LOCAL_POC_DATA_ROOT`
+
+Run the same `npm run poc` command to continue later.
+
+### Select a specific container engine
+
+Force Podman when multiple engines are installed:
+
+```bash
+CONTAINER_ENGINE=podman \
+ARK_API_KEY=your-ark-api-key \
+ARK_MODEL=ep-your-endpoint-id \
+npm run poc
+```
+
+Colima uses `CONTAINER_ENGINE=docker` because it exposes the Docker CLI.
+
+For a clean Linux host, follow the
+[rootless Podman setup](docs/LOCAL_POC.md#rootless-podman-on-linux).
+
+## Demo script
+
+On WSL2 or Linux with Docker or rootless Podman, start the POC as in
+[Quick start](#quick-start), then walk the controls in order.
+
+**The transaction boundary**
+
+1. Ask an Agent to create a small program and test. Confirm the evidence panel
    says the live workspace is unchanged, then approve the proposed changes.
-3. Ask it to create a dummy `.env`. Rule `TC002` denies promotion and the live
+2. Ask it to create a dummy `.env`. Rule `TC002` denies promotion and the live
    workspace stays unchanged.
-4. Ask it to create `config/.env` instead. Protected names are matched on every
+3. Ask it to create `config/.env` instead. Protected names are matched on every
    path segment, so `TC002` denies the nested copy too, and the evidence panel
    names the offending path.
 
-5. Put a `docs/handbook.md` starting with `COMPANY CONFIDENTIAL` into the live
-   workspace and ask the Agent to summarise it. The ingress gate withholds the
-   file before the container starts, the Agent reports only the tombstone, and
-   the evidence panel shows `IN021` with how few bytes were read. Approving the
-   Run leaves the original document intact.
-6. Paste a fake key into a prompt (`call the API with api_key=sk-live-...`).
+**The ingress gate**
+
+4. Put a `docs/handbook.md` starting with `COMPANY CONFIDENTIAL` into the live
+   workspace and ask the Agent to summarise it. The gate withholds the file
+   before the container starts, the Agent reports only the tombstone, and the
+   evidence panel shows `IN021` with how few bytes were read. Approving the Run
+   leaves the original document intact.
+5. Paste a fake key into a prompt (`call the API with api_key=sk-live-...`).
    `IN010` strips it, so the Runtime, the transcript, and the audit record never
    hold the value.
-7. The trifecta. Put a `docs/roadmap.md` starting with `INTERNAL ONLY` in the
-   workspace and ask the Agent to work on it — the panel shows two of three
-   capabilities held, and the file stays readable. Now add
-   `vendor/widget/readme.html` containing "Ignore all previous instructions", or
-   simply put a URL in the prompt. The third leg closes, `IN061` drops clearance
-   to `public`, and the roadmap is withheld — from the same Run that could read
-   it a moment ago.
-8. Show `ark-gateway` in the evidence panel. The startup preflight has already
+
+**The egress gateway**
+
+6. Check `ark-gateway` in the evidence panel. The startup preflight has already
    proved that a Runtime peer cannot contact a public destination directly, so
-   the external-comms leg of the trifecta is constrained rather than open.
+   the external-comms leg is closed and the trifecta cannot complete in this
+   mode.
 
+**The lethal trifecta**
 
-Middleware development uses deterministic fake runners and needs no model:
+7. Restart in connected mode (`RUNTIME_NETWORK_MODE=current-bridge`) to open the
+   comms leg. Put a `docs/roadmap.md` starting with `INTERNAL ONLY` in the
+   workspace and ask the Agent to work on it — the panel shows two of three
+   capabilities held, and the file stays readable.
+8. Now add `vendor/widget/readme.html` containing "Ignore all previous
+   instructions", or simply put a URL in the prompt. The third leg closes,
+   `IN061` drops the effective clearance to `public`, and the roadmap is
+   withheld — from the same Run that could read it a moment ago.
+
+## Development
 
 ```bash
 npm install
-npm run check
+cp .env.example .env
+npm install --global @openai/codex@0.111.0
+npm run dev
 ```
 
-Live Ark credentials are required only for the final real-model demo.
+- Web UI: <http://localhost:5173>
+- API: <http://localhost:3000>
+
+Use local paths in `.env` when running outside Docker:
+
+```dotenv
+APP_DATA_DIR=.data
+AGENT_WORKSPACE_ROOT=workspaces
+CODEX_HOME=codex-home
+```
+
+Middleware work uses deterministic fake runners and needs no model, so live Ark
+credentials are required only for the final real-model demo.
+
+## Docker Compose
+
+The legacy single-container Compose profile can serve the control plane and UI,
+but it cannot execute Airlock Runs unless that environment provides a separate
+supported container engine. Airlock never mounts the Docker socket and never
+falls back to in-process Codex. Use `npm run poc` for the complete local
+acceptance path.
+
+Create and edit the configuration:
+
+```bash
+./scripts/bootstrap-local.sh
+```
+
+Required values in `.env`:
+
+```dotenv
+ARK_API_KEY=your-ark-api-key
+ARK_MODEL=ep-your-endpoint-id
+APP_AUTH_TOKEN=replace-with-at-least-24-random-characters
+```
+
+Start the application:
+
+```bash
+docker compose up --build
+```
+
+Open <http://localhost:3000>. Stop it without deleting Agent data:
+
+```bash
+docker compose down
+```
+
+## Deployment
+
+- [Existing Linux ECS with Docker](docs/DEPLOYMENT.md#existing-linux-ecs)
+- [Complete Volcengine environment with Terraform](docs/DEPLOYMENT.md#terraform-deployment)
+- [Local Docker, Colima, and Podman details](docs/LOCAL_POC.md)
+
+The host deployment script deploys from the current source tree:
+
+```bash
+cp .env.example .env.production
+sudo ./scripts/deploy-host.sh .env.production
+```
+
+The Terraform path provisions VPC, subnet, security group, ECS, and EIP:
+
+```bash
+cp deploy/volcengine/terraform.tfvars.example \
+  deploy/volcengine/terraform.tfvars
+./scripts/deploy-volcengine.sh
+```
+
+## Configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ARK_API_KEY` | Required | Ark model API key. |
+| `ARK_MODEL` | Required | Responses-capable endpoint or model ID. |
+| `ARK_BASE_URL` | Beijing v3 endpoint | Ark OpenAI-compatible API URL. |
+| `APP_AUTH_TOKEN` | Empty on loopback | Shared demo token; use 24+ random characters remotely. |
+| `RUNTIME_PROVIDER` | `container` | Guarded Runs require disposable Runtime containers and fail closed otherwise. |
+| `RUNTIME_NETWORK_MODE` | `current-bridge` in raw config; `ark-gateway` in `.env.example` and the supported startup scripts | Ark-only internal networking, or explicit unrestricted egress. |
+| `ARK_GATEWAY_URL` | `http://ark-gateway:8080/api/v3` | Internal Responses API endpoint used by Codex. |
+| `ARK_GATEWAY_SECRET` | Generated by supported startup scripts | Signs short-lived Run tokens; 32+ characters when starting components manually. |
+| `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox mode. |
+| `CODEX_TIMEOUT_MS` | `600000` | Maximum duration of one turn. |
+| `INGRESS_ENFORCEMENT` | `enforce` | Read-side gate: `enforce` withholds, `audit` records, `off` disables. |
+| `INGRESS_CLEARANCE` | `internal` | Highest sensitivity a Run may read. |
+| `INGRESS_MAX_BYTES_PER_FILE` | `262144` | Inspection budget per file; rules usually settle sooner. |
+| `INGRESS_PROMPT_SECRETS` | `redact` | Credentials pasted into a prompt: `redact` or `deny`. |
+| `INGRESS_ADJUDICATOR` | `off` | Model-backed classification of unmarked documents: `off` or `ark`. |
+| `INGRESS_ADJUDICATOR_MAX_FILES` | `5` | Model calls per Run. |
+| `LOCAL_POC_DATA_ROOT` | Platform-specific | Local metadata, workspace, and session directory. |
+
+See [.env.example](.env.example) for all Runtime and resource-limit options.
+
+## Validation
+
+```bash
+npm run check
+docker build --target test --tag airlock-test:local .
+terraform fmt -check -recursive deploy/volcengine
+docker compose config
+```
+
+`npm run check` runs typecheck, tests, and build against deterministic fake
+runners, so it needs no Ark credentials.
 
 ## Threat model and limitations
 
@@ -465,42 +525,39 @@ is never mounted. On the egress side, the supported POC and host-deployment
 paths put the Runtime on an internal Docker network behind a Responses-only
 gateway, so Ark is the only reachable destination and the real Ark key never
 enters the Runtime. Those two together are what let the lethal-trifecta check
-treat `ark-gateway` as a constrained comms leg rather than an open one.
+treat `ark-gateway` as a closed comms leg rather than an open one.
 
-Residual risks: content the classifier cannot decode (encrypted archives,
-image-only PDFs, markings that live only in a compressed page stream) is
-classified as unmarked; `current-bridge` remains an explicit compatibility mode
-for npm/GitHub tasks and restores both the open-egress and Ark-credential risks;
-the gateway trusts Volcengine Ark with model inputs; ordinary containers are not
-hostile multi-tenant isolation; and the JSON store is single-process. Profiles
-unable to launch the Runtime or its required gateway fail closed.
+Residual risks:
 
+- Content the classifier cannot decode — encrypted archives, image-only PDFs,
+  markings that live only in a compressed page stream — is classified as
+  unmarked.
+- `current-bridge` remains an explicit compatibility mode for npm and GitHub
+  tasks, and restores both the open-egress and Ark-credential risks.
+- The gateway trusts Volcengine Ark with model inputs.
+- Ordinary containers are not hostile multi-tenant isolation.
+- The JSON store is single-process.
 
-Implementation contribution: one sequential owner implemented the core data
-model, transaction boundary, Runtime policy, lifecycle/API, evidence UI,
-tests, and documentation.
+Profiles unable to launch the Runtime or its required gateway fail closed.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for component and extension
 boundaries.
-
-## Validation
-
-```bash
-npm run check
-docker build --target test --tag airlock-test:local .
-terraform fmt -check -recursive deploy/volcengine
-docker compose config
-```
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Design foundations](docs/DESIGN_FOUNDATIONS.md) — the research each control restates, and where it falls short
+- [Permission model](docs/permission-model.html) — illustrated walkthrough of a Run; open it in a browser
 - [Local POC](docs/LOCAL_POC.md)
 - [Deployment](docs/DEPLOYMENT.md)
 - [Hackathon extension guide](docs/HACKATHON_EXTENSION_GUIDE.md)
 - [Security policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
+
+## Authorship
+
+One sequential owner implemented the core data model, transaction boundary,
+Runtime policy, lifecycle and API, evidence UI, tests, and documentation.
 
 ## License
 
